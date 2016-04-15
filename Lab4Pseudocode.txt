@@ -20,11 +20,11 @@ void max_left(void);
 void max_right(void);
 unsigned int userInputPWForWheelPosition(void);
 
-void Drive_Car(void);
-void Read_Ranger(unsigned int);
-void Read_Compass(unsigned int);
-void Set_Motor_Speed(void);
-void Correct_Steering(void);
+void DriveCar(void);
+void ReadRanger(unsigned int);
+void ReadCompass(unsigned int);
+void SetMotorSpeed(void);
+void CorrectSteering(void);
 
 Global Variables------------------------------------------------------------
 
@@ -77,7 +77,7 @@ while True
 	
 Functions-------------------------------------------------------------------
 
-function Correct_Steering()
+function CorrectSteering()
 	calculate error (desired heading - actual heading)
 	if (error > 180 degrees)
 		subtract 360 degrees from error
@@ -85,7 +85,7 @@ function Correct_Steering()
 		add 360 degrees to error
 	calculate a pulsewidth to correct error (k*error + centered pulsewidth)
 
-function Set_Motor_Speed()
+function SetMotorSpeed()
 	if (latest_range <= 10cm)
 		Set pulse width corresponding to max forward
 	if (10cm < latest_range < 40cm)
@@ -97,23 +97,23 @@ function Set_Motor_Speed()
 	if(latest_range >=90)
 		Set pulse width corresponding to max reverse
 
-function Drive_Car()
+function DriveCar()
 	if (r_Counts is greater than or equal to 4)
 		set r_Counts to 0
-		Read_Ranger
+		ReadRanger
 		if motor slide switch is active
-			Set_Motor_Speed
+			SetMotorSpeed
 		else
 			Set motor pulsewidth to neutral
 	if (h_Counts is greater than or equal to 2)
 		set h_Counts to 0
-		Read_Compass
+		ReadCompass
 		if steering slide switch is active
-			Correct_Steering
+			CorrectSteering
 		else
 			Set servo pulsewidth to center
 
-function Read_Ranger()
+function ReadRanger()
 	store address of ranger sensor (0xE0)
 	set range=0
 	creates a data array of length 2
@@ -123,7 +123,7 @@ function Read_Ranger()
 	start ping for next reading
 	return range
 
-function Read_Compass()
+function ReadCompass()
 	store address of compass sensor
 	creates a data array of length 2
 	run function i2c_read_data, passing in the compass address, # of bits to read,
