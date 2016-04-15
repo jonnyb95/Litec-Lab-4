@@ -23,12 +23,11 @@ unsigned int userInputPWForWheelPosition(void);
 void DriveCar(void);
 void ReadRanger(unsigned int);
 void ReadCompass(unsigned int);
-void SetMotorSpeed(void);
+void DriveMotor(unsigned char);
 void CorrectSteering(void);
 
 char ShouldBangARight(void);
 void StopWhenClose(void);
-void DriveMotorWithDigital(unsigned char);
 unsigned int DistanceFromRangerToNearestObject(void);
 
 Global Variables------------------------------------------------------------
@@ -142,7 +141,7 @@ function StopWhenClose
         if distanceFromRangerToNearestObject is less than distanceAtWhichToStop
             Drive the motor with the neutral digital value, i.e., stop the motor
 
-function DriveMotorWithDigital(given digitalValue from Potentiometer A/D conversion)
+function DriveMotor(given digitalValue from Potentiometer A/D conversion)
     Set the motor pulse width to a rounded value between maximum and minimum 
     motor pulse width, depending on the digital value passed to the function: 
     Motor pulse width = minumum + ceiling(digital value * (maximum - minimum)/(255 - 0))
@@ -169,7 +168,7 @@ function DriveCar()
 		set r_Counts to 0
 		ReadRanger
 		if motor slide switch is active
-			SetMotorSpeed
+			DriveMotor
 		else
 			Set motor pulsewidth to neutral
 	if (h_Counts is greater than or equal to 2)
