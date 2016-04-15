@@ -1,1 +1,192 @@
+Compiler Initiatives--------------------------------------------------------
 
+#include <c8051_SDCC.h> 
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <i2c.h>
+
+Function Prototypes---------------------------------------------------------
+
+void Port_Init(void);
+void PCA_Init (void);
+void XBR0_Init(void);
+void SMB_Init(void);
+void i2c_start(void);
+void PCA_ISR ( void ) __interrupt 9;
+
+void centered(void);
+void max_left(void);
+void max_right(void);
+unsigned int userInputPWForWheelPosition(void);
+
+void Drive_Car(void);
+void Read_Ranger(unsigned int);
+void Read_Compass(unsigned int);
+void Set_Motor_Speed(void);
+void Correct_Steering(void);
+
+Global Variables------------------------------------------------------------
+
+__sbit __at 0xB6 motorSS;
+__sbit __at 0xB7 servoSS;
+
+unsigned int CEX0_CENTER = 2765; 
+unsigned int CEX0_MIN = 1659;
+unsigned int CEX0_MAX = 3871;
+unsigned int CEX0_PW = 2765;
+
+unsigned int CEX2_NEUTRAL = 2765;
+unsigned int CEX2_MAX = 3502;
+unsigned int CEX2_MIN = 2027;
+unsigned int CEX2_PW = 2765;
+
+char input;
+
+unsigned int Counts = 0;
+
+unsigned int h_Counts = 0;
+unsigned int heading;
+unsigned int desired_heading;
+unsigned int k;
+signed int error;
+
+unsigned int r_Counts = 0;
+unsigned int range;
+
+Main Function---------------------------------------------------------------
+
+Sys_Init();
+Port_Init();
+XBR0_Init();
+PCA_Init();
+SMB_Init();
+
+Wait 1 second for motor to warm up
+print "Steering Calibration."
+Set steering Pulsewidth to approximatly centered
+Call Calibration Functions
+	centered();
+	max_left();
+	max_right();
+print "Calibration complete!"	
+
+while True
+	Drive_Car
+
+	
+Functions-------------------------------------------------------------------
+
+function Correct_Steering()
+	calculate error (desired heading - actual heading)
+	if (error > 180 degrees)
+		subtract 360 degrees from error
+	if (error < -180 degrees)
+		add 360 degrees to error
+	calculate a pulsewidth to correct error (k*error + centered pulsewidth)
+
+function Set_Motor_Speed()
+	if (latest_range <= 10cm)
+		Set pulse width corresponding to max forward
+	if (10cm < latest_range < 40cm)
+		Linearly vary pulse width between max forward and neutral
+	if (50cm >= latest_range >= 40cm)
+		Set pulse width corresponding to neutral
+	if (50cm < latest_range < 90cm)
+		Linearly vary pulse width between neutral and max reverse
+	if(latest_range >=90)
+		Set pulse width corresponding to max reverse
+
+function Drive_Car()
+	if (r_Counts is greater than or equal to 4)
+		set r_Counts to 0
+		Read_Ranger
+		if motor slide switch is active
+			Set_Motor_Speed
+		else
+			Set motor pulsewidth to neutral
+	if (h_Counts is greater than or equal to 2)
+		set h_Counts to 0
+		Read_Compass
+		if steering slide switch is active
+			Correct_Steering
+		else
+			Set servo pulsewidth to center
+
+function Read_Ranger()
+	store address of ranger sensor (0xE0)
+	set range=0
+	creates a data array of length 2
+	run function i2c_read_data, passing in the compass address, # of bits to read,
+	  the data array, and the source register (2)
+	combine the elements of the data array using bit shifts
+	start ping for next reading
+	return range
+
+function Read_Compass()
+	store address of compass sensor
+	creates a data array of length 2
+	run function i2c_read_data, passing in the compass address, # of bits to read,
+	  the data array, and the source register (2)
+	combine the elements of the data array using bit shifts
+	return heading
+	
+CALIBRATION FUNCTIONS
+
+function userInputPWForWheelPosition()
+    Set "calibrating" variable to TRUE
+    while (calibrating variable is TRUE)
+        get and store a keyboard character
+		if (input is 'r')
+            Decrement the steering pulsewidth by 10 counts
+    	else if (input is 'l')
+            Increment the steering pulsewidth by 10 counts
+		else if (input is 'g')
+			Set "calibrating" to FALSE
+		Return the current servo pulse width
+	
+function centered()
+	print "CENTER: Adjust the pulswidth to make the servo more left (a) or right (d),
+	  until the steering is centered, when centered press 'g'
+	Centered servo pulsewidth = userInputPWForWheelPosition();
+
+function max_left()
+	print "LEFT: Adjust the steering until the servo is at a maximum left (a), when left press 'g'
+    Minimum servo pulsewidth = userInputPWForWheelPosition(); 
+
+void max_right()
+	print "RIGHT: Adjust the steering until the servo is at a maximum right (d), when right press 'g'
+	Maximum servo pulsewidth = userInputPWForWheelPosition();		
+	
+INITILIZATION FUNCTIONS
+
+function SMB_Init()
+	Initialize SMBus registers
+	Set SCL to 100KHz
+	Enable SMBus
+
+function Port_Init()
+    Bitmask output pins (Port 1.0 and 1.2) to push-pull mode
+
+function XBR0_Init()
+    Configure crossbar (XBR0 = 0x27;)
+
+function PCA_Init(void)
+	PCA0MD = 0x81;
+	  -Enable PCA0 Counter/Timer Overflow interrupt when CF is set and suspend
+	   PCA0 operation while the system controller is in idle mode
+	PCA0CPM0 = 0xC2;
+	  -For PCA0 module 0, enable 16-bit PWM mode and compare
+	PCA0CN = 0x40;
+	  -Enable the PCA0 Counter/Timer itself
+	EIE1 |= 0x08;
+	  -Enable interrupt requests generated by CP1RIF flag
+	EA = 1;
+	  -Enable global interrupts
+
+function PCA_ISR ( void ) __interrupt 9
+	if(overflow flag is activated)
+		Set start count so that the PCA count overflows in 20ms
+		Increment Counts, h_Counts, and r_Counts
+		Clear the PCA0 overflow flag (CF = 0;)
+	For PCA0, clear module flags (PCA0CN &=0x40;)
