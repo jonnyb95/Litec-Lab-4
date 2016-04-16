@@ -1,0 +1,294 @@
+Compiler Initiatives--------------------------------------------------------
+
+#include <c8051_SDCC.h> 
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <i2c.h>
+
+Function Prototypes---------------------------------------------------------
+
+void Port_Init(void);
+void PCA_Init(void);
+void ADC_Init(void);
+void XBR0_Init(void); 
+void SMB_Init(void);
+void PCA_ISR ( void ) __interrupt 9;
+void i2c_start(void);
+void GetBatteryVoltage(void);
+unsigned char ReadADC(void);
+unsigned char ReadPot(void);
+unsigned int ReadRanger(void);
+unsigned int ReadCompass(void);
+void DriveCar(void);
+void MotorSpeed(unsigned char digitalValue);
+void CorrectSteering(void);
+void AvoidObsticles(void);
+void Calibrate(void);
+void Centered(void);
+void MaxLeft(void);
+void MaxRight(void);
+unsigned int UserSetPW(void); 
+unsigned int InputGain(void);
+signed int InputHeading(void);
+void PrintData(void);
+void Pause20ms(void);
+
+Global Variables------------------------------------------------------------
+
+__sbit __at 0xB6 motorSS;
+__sbit __at 0xB7 servoSS;
+char i;  // incrementer
+unsigned int Counts = 0; // 20ms count
+unsigned int lcd_count = 0;
+unsigned char Data[2];
+unsigned int r_count = 0;
+unsigned int range;
+unsigned int h_count = 0; 
+unsigned int heading;
+__xdata unsigned int desiredHeading = 0;
+__xdata unsigned int k = 1;
+signed int error;
+unsigned char turnDistance = 20; //in cm, given in lab description
+unsigned char stopDistance = 10; //in cm, given in lab description
+unsigned char hasTurned = 0; 
+unsigned int batteryVoltage;
+__xdata unsigned int CEX0_CENTER = 2765; // approximate value associated with central servo position
+__xdata unsigned int CEX0_MIN = 1659; // lower bound associated with rightmost servo position
+__xdata unsigned int CEX0_MAX = 3871; // upper bound associated with leftmost servo position
+unsigned int CEX0_PW = 2765; // pulse width being sent to CEX0, servo
+__xdata unsigned int CEX2_MIN = 2027; // lower bound associated with minimum motor speed
+__xdata unsigned int CEX2_MAX = 3502; // upper bound associated with maximum motor speed
+__xdata unsigned int CEX2_NEUTRAL = 2765;
+unsigned int CEX2_PW = 2765; // pulse width being sent to CEX2, motor 
+char input; // user input characters for device calibration
+unsigned int calibrating;  // calibrating flag
+char headingType;
+int headingInput;
+
+Main Function---------------------------------------------------------------
+
+Sys_Init();
+Port_Init();
+XBR0_Init();
+PCA_Init();
+ADC_Init();
+SMB_Init();
+Wait 1 second for motor to warm up
+CalibrateSteering();
+print data output CSV header
+while True
+	DriveCar();
+	AvoidObsticles();
+	PrintData();
+	
+Functions-------------------------------------------------------------------
+
+GENERAL
+
+function Pause20ms()
+	Pause for 20ms
+
+LCD KEYPAD FUNCTIONS
+
+function InputHeading()
+	lcd_clear()
+	Pause20ms()
+	print "Press '1' on keypad to input heading, Press '2' on keypad for list of possible headings"
+	print on LCD "Press '1' for input[new line]Press '2' for list[new line]"
+	Pause20ms()
+	get input from keypad (kpd_input(1)) and store as variable headingType
+	Pause20ms()
+	if no keys are currently pressed
+		if(headingType == 1)
+			lcd_clear()
+			Pause20ms()
+			print "Input 4 character desired heading on keypad and press '#' key when finished"				
+			print on LCD "Input 4 character[new line]desired heading[new line]"
+			get input from keypad (kpd_input(1)) and store as variable desiredHeading
+		if(headingType == 2)
+			lcd_clear()
+			print "Select from the following options: Option 1: 0 Degrees Option 2: 90 Degrees
+				Option 3: 180 Degrees Option 4: 270 Degrees"
+			print on LCD "Option 1: 0 Degrees Option 2: 90 Degrees
+				Option 3: 180 Degrees Option 4: 270 Degrees"
+			get input from keypad (kpd_input(1)) and store as variable headingInput
+			Pause20ms()
+			if no keys are currently pressed
+				if(headingInput == 1), desiredHeading = 0 degrees
+				if(headingInput == 2), desiredHeading = 90 degrees
+				if(headingInput == 3), desiredHeading = 180 degrees
+				if(headingInput == 4), desiredHeading = 270 degrees
+	return desiredHeading;
+
+function InputGain()
+	print "Input desired gain"
+	lcd_clear()
+	Pause20ms()
+	print on LCD "Input desired gain"
+	Pause20ms()
+	if no keys are currently pressed
+		get input from keypad (kpd_input(1)) and store as variable desiredHeading
+	lcd_clear()
+	return k
+}
+void PrintData(void) {
+	print desiredHeading,heading,error,range,motorPulsewidth,
+		servoPulsewidth,batteryVoltage in CSV form
+	if 400ms have elapsed since last LCD update
+		reset LCD update counter
+		print on LCD "Heading [new line] Range [new line] Battery Voltage"
+
+DATA FUNCTIONS
+
+function GetBatteryVoltage()
+	Change ADC1 input to P1.4 (battery voltage divider)
+	Pause for 20ms
+	Get conversion from ADC1 and convert to mV
+	Change ADC1 input back to P1.5 (potentiometer)
+	print the battery voltage (Also serves as a delay for ADC1 input change)
+
+function ReadPot()
+	Ensure ADC1 input is on P1.5 (potentiometer)
+	return ADC1 conversion
+
+function ReadADC()
+	Clear the Conversion Completed flag
+	Initiate A/D conversion
+	Wait for conversion to complete
+	Return digital value in ADC1 register
+
+function ReadRanger()
+	store address of ranger sensor (0xE0)
+	set range=0
+	creates a data array of length 2
+	run function i2c_read_data, passing in the compass address, # of bits to read,
+	  the data array, and the source register (2)
+	combine the elements of the data array using bit shifts
+	start ping for next reading
+	return range
+
+function ReadCompass()
+	store address of compass sensor
+	creates a data array of length 2
+	run function i2c_read_data, passing in the compass address, # of bits to read,
+	  the data array, and the source register (2)
+	combine the elements of the data array using bit shifts
+	return heading
+
+POSITION CONTROL FUNCTIONS
+
+function DriveMotor(given digitalValue from Potentiometer A/D conversion)
+    Set the motor pulse width to a rounded value between maximum and minimum 
+    motor pulse width, depending on the digital value passed to the function: 
+    Motor pulse width = minumum + ceiling(digital value * (maximum - minimum)/(255 - 0))
+	if latestRange is less than stopDistance
+		Motor pulsewidth = Neutral pulsewidth (i.e., stop the motor)
+	Drive motor with the current motor pulse width
+
+function CorrectSteering()
+	calculate error (desired heading minus actual heading)
+	if (error is greater than 180 degrees)
+		subtract 360 degrees from error
+	if (error is less than -180 degrees)
+		add 360 degrees to error
+	calculate a pulsewidth to correct error (k*error + centered pulsewidth)
+	if pulsewidth is less than the minimum, use minimum
+	if pulsewidth is more than the maximum, use maximum
+	set capture compare module using calculated pulsewidth
+
+function DriveCar()
+	AvoidObsticles()
+	if (h_Counts is greater than or equal to 2)
+		set h_Counts to 0
+		ReadCompass
+		if motor slide switch is active
+			DriveMotor
+		else
+			Set motor pulsewidth to neutral
+		if steering slide switch is active
+			CorrectSteering
+		else
+			Set servo pulsewidth to center
+
+funcion AvoidObsticles()
+	if (r_Counts is greater than or equal to 4)
+		ReadRanger
+		set r_Counts to 0
+	if (stopDistance<latestRange<turnDistance and the car has NOT turned previously)
+		Raise the desired heaidng by 90 degrees clockwise
+		Set a flag to reflect that the car has previosuly turned right
+
+CALIBRATION FUNCTIONS
+
+function Calibrate()
+	print "Steering Calibration."
+	Call Calibration Functions
+		Centered();
+		MaxLeft();
+		MaxRight();
+	print "Calibration complete!"
+
+function UserSetPW()
+    Set "calibrating" variable to TRUE
+    while (calibrating variable is TRUE)
+        get and store a keyboard character
+		if (input is 'r')
+            Decrement the steering pulsewidth by 10 counts
+    	else if (input is 'l')
+            Increment the steering pulsewidth by 10 counts
+		else if (input is 'g')
+			Set "calibrating" to FALSE
+		Return the current servo pulse width
+	
+function Centered()
+	Set steering Pulsewidth to approximatly centered
+	print "CENTER: Adjust the pulswidth to make the servo more left (a) or right (d),
+	  until the steering is centered, when centered press 'g'
+	Centered servo pulsewidth = UserSetPW();
+
+function MaxLeft()
+	print "LEFT: Adjust the steering until the servo is at a maximum left (a), when left press 'g'
+    Minimum servo pulsewidth = UserSetPW(); 
+
+void MaxRight()
+	print "RIGHT: Adjust the steering until the servo is at a maximum right (d), when right press 'g'
+	Maximum servo pulsewidth = UserSetPW();		
+	
+INITILIZATION FUNCTIONS
+
+function SMB_Init()
+	Initialize SMBus registers
+	Set SCL to 100KHz
+	Enable SMBus
+
+function Port_Init()
+    Bitmask output pins (Port 1.0 and 1.2) to push-pull mode
+
+function XBR0_Init()
+    Configure crossbar (XBR0 = 0x27;)
+
+function PCA_Init(void)
+	PCA0MD = 0x81;
+	  -Enable PCA0 Counter/Timer Overflow interrupt when CF is set and suspend
+	   PCA0 operation while the system controller is in idle mode
+	PCA0CPM0 = 0xC2;
+	  -For PCA0 module 0, enable 16-bit PWM mode and compare
+	PCA0CN = 0x40;
+	  -Enable the PCA0 Counter/Timer itself
+	EIE1 |= 0x08;
+	  -Enable interrupt requests generated by CP1RIF flag
+	EA = 1;
+	  -Enable global interrupts
+	
+function ADC1 Initialization
+	Set Vref to use internal reference voltage (2.4 V)
+	Enable A/D converter (ADC1)
+	Set A/D converter gain to 1
+
+function PCA_ISR ( void ) __interrupt 9
+	if(overflow flag is activated)
+		Set start count so that the PCA count overflows in 20ms
+		Increment Counts, h_Counts, r_Counts, and lcd_counts
+		Clear the PCA0 overflow flag (CF = 0;)
+	For PCA0, clear module flags (PCA0CN &=0x40;)
