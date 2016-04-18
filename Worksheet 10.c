@@ -46,14 +46,14 @@ void main(void)
     
     while (1)
     {
-        keypadInput = read_keypad(); 
+        keypadInput = read_keypad(); //read the keypad
         if (keypadInput != -1) { //if keypad pressed
-            tensDigit = keypadInput; while(read_keypad() != -1); pause();
+            tensDigit = keypadInput; while(read_keypad() != -1); pause(); //store press as tens digit
             
             do {
-                onesDigit = read_keypad();
-            } while (read_keypad() == -1)
-            while(read_keypad() != -1); pause(); 
+                onesDigit = read_keypad(); //set the result of read_keypad to ones digit
+            } while (onesDigit == -1) //stop once ones digit equals an input value
+            while(read_keypad() != -1); pause(); //wait until key is released, then pause for one second
              
             numAsDecimal = twoDigitNum(tensDigit, onesDigit); 
             displayInput(numAsDecimal); 
